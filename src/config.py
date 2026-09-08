@@ -28,10 +28,10 @@ START = "2015-01-01"
 END = None  # None means "up to today"
 
 # --- Modeling --------------------------------------------------------------
-WINDOW = 60          # days of history fed to the LSTM, matching the reference notebook
+WINDOW = 60          # days of history fed to the LSTM, matching the reference implementation
 HORIZON = 1          # predict one day ahead
 
-TRAIN_FRAC = 0.70    # chronological splits — never shuffled
+TRAIN_FRAC = 0.70    # chronological splits, never shuffled
 VAL_FRAC = 0.15
 TEST_FRAC = 0.15
 

@@ -1,4 +1,4 @@
-# Plan of Execution — Netflix (NFLX) Stock Price Forecasting
+# Plan of Execution: Netflix (NFLX) Stock Price Forecasting
 
 **Owner:** Matthew Peters
 **Created:** 2026-09-08
@@ -9,7 +9,7 @@
 
 ## 0. What this project is
 
-Interview Query's *Fintech ML Projects* list, project **#2 — Predicting Netflix Stock Prices**:
+Interview Query's *Fintech ML Projects* list, project **#2, Predicting Netflix Stock Prices**:
 
 > Learn the fundamentals of time series forecasting in finance by predicting stock prices
 > using historical data and deep learning models.
@@ -32,7 +32,7 @@ So this project is deliberately built as an **honest evaluation** of that claim:
 > *Does an LSTM on NFLX daily prices actually beat a naive "tomorrow = today" baseline?*
 
 We build the LSTM properly, and we build the baselines, and we report both. If the LSTM
-does not win, **we say so and explain why** — that is the finding, and it is a much stronger
+does not win, **we say so and explain why**. That is the finding, and it is a much stronger
 interview story than a pretty chart. ProjectPro's own article concedes the point:
 ML techniques "remain unreliable for real-world market prediction."
 
@@ -43,14 +43,14 @@ walk-forward validation and reported directional accuracy instead of RMSE."*
 
 ---
 
-## 1. Source synthesis — what each link contributes
+## 1. Source synthesis: what each link contributes
 
 | Source | What we take from it | What we deliberately change |
 |---|---|---|
-| **ProjectPro** — *Stock Price Prediction Using ML* | Problem framing; SMA/EMA baselines; RMSE + MAPE as metrics; the explicit limitations section (COVID/news shocks break these models) | It stays at the article level — no runnable repo. We supply the code. |
-| **Interview Query #2** — *Predicting Netflix Stock Prices* | The ticker (**NFLX**), the Yahoo Finance data source, and the deliverable spec (LSTM/RNN in Keras) | — |
-| **Kaggle — Fares Sayah**, *Stock Market Analysis + Prediction using LSTM* | The EDA template (closing price, volume, 10/20/50-day MAs, daily returns, return distribution, correlation heatmap, risk-vs-return scatter) and the LSTM recipe (60-day window, MinMaxScaler, `LSTM(128) → LSTM(64) → Dense(25) → Dense(1)`, Adam + MSE) | Four real defects, fixed in §4 — see below |
-| **Kaggle — andreshg**, *TimeSeries Analysis: A Complete Guide* | The rigorous time-series spine: missing/equidistant timestamps, resampling, **ADF stationarity test**, transforming & differencing, cyclical encoding, seasonal decomposition, lag features, **ACF/PACF**, ARIMA / auto-ARIMA / Prophet | Its notebook is on groundwater data — we port the method to NFLX |
+| **ProjectPro**, *Stock Price Prediction Using ML* | Problem framing; SMA/EMA baselines; RMSE + MAPE as metrics; the explicit limitations section (COVID/news shocks break these models) | It stays at the article level, with no runnable repo. We supply the code. |
+| **Interview Query #2**, *Predicting Netflix Stock Prices* | The ticker (**NFLX**), the Yahoo Finance data source, and the deliverable spec (LSTM/RNN in Keras) | none |
+| **Kaggle**, *Stock Market Analysis + Prediction using LSTM* | The EDA template (closing price, volume, 10/20/50-day MAs, daily returns, return distribution, correlation heatmap, risk-vs-return scatter) and the LSTM recipe (60-day window, MinMaxScaler, `LSTM(128) → LSTM(64) → Dense(25) → Dense(1)`, Adam + MSE) | Four real defects, fixed in §4. See below. |
+| **Kaggle**, *TimeSeries Analysis: A Complete Guide* | The rigorous time-series spine: missing/equidistant timestamps, resampling, **ADF stationarity test**, transforming & differencing, cyclical encoding, seasonal decomposition, lag features, **ACF/PACF**, ARIMA / auto-ARIMA / Prophet | Its notebook is on groundwater data, so we port the method to NFLX |
 
 ### The four defects we inherit from the Kaggle LSTM notebook and fix
 
@@ -72,16 +72,16 @@ These are the substance of the project. Each one becomes a section in the README
 
 The Kaggle notebook is 4 years old and will not run as written:
 
-- `yf.pdr_override()` was **removed** from `yfinance` — `pandas_datareader` is no longer needed.
+- `yf.pdr_override()` was **removed** from `yfinance`, and `pandas_datareader` is no longer needed.
   Use `yf.download(...)` / `yf.Ticker("NFLX").history(...)` directly.
 - `yfinance` now defaults to `auto_adjust=True`, so there is **no `Adj Close` column** unless you
   pass `auto_adjust=False`. Decide once and document it (we use adjusted closes).
 - `yf.download` on multiple tickers returns a **MultiIndex column frame**; the notebook's
-  `globals()[stock] = ...` pattern is fragile — we use an explicit `dict[str, DataFrame]`.
+  `globals()[stock] = ...` pattern is fragile, so we use an explicit `dict[str, DataFrame]`.
 
 ---
 
-## 2. Environment — what we need before writing any code
+## 2. Environment: what we need before writing any code
 
 Current machine state (checked 2026-09-08):
 
@@ -91,7 +91,7 @@ Current machine state (checked 2026-09-08):
 - `pandas`, `numpy` **not installed**
 - `git` present; **`gh` (GitHub CLI) not installed**
 
-### Step 0 — set up the environment (do this first, ~20 min)
+### Step 0. Set up the environment (do this first, ~20 min)
 
 ```bash
 cd /Users/matthew/projects/netflix-stock-forecasting
@@ -109,14 +109,14 @@ python -c "import tensorflow as tf, sys; print(sys.version.split()[0], tf.__vers
 
 **If that fails:** Python 3.9 is at the edge of TensorFlow's support window. Install
 Python 3.12 from the official installer at <https://www.python.org/downloads/macos/>
-(a `.pkg` — it will ask for your Mac password; no Homebrew required), then rebuild the venv with
+(a `.pkg`; it will ask for your Mac password, and no Homebrew is required), then rebuild the venv with
 `/usr/local/bin/python3.12 -m venv .venv`. Everything else in `requirements.txt` is unpinned
 enough to work on either.
 
 **Fallback if TF stays broken:** swap the LSTM to PyTorch (`pip install torch`). The plan does
-not otherwise depend on Keras — decide by end of Session 1, do not let it block the EDA work.
+not otherwise depend on Keras. Decide by end of Session 1, and do not let it block the EDA work.
 
-### Step 1 — git + GitHub
+### Step 1. git + GitHub
 
 ```bash
 git init && git add -A && git commit -m "Scaffold NFLX forecasting project"
@@ -177,22 +177,22 @@ credibility upgrade and it is the reason for the split.
 
 ## 4. Execution phases
 
-### Session 1 — Environment + data (2h)
+### Session 1. Environment + data (2h)
 - [ ] Run Step 0 and Step 1 above; confirm TensorFlow imports
 - [ ] `src/config.py`: `TICKER="NFLX"`, `START="2015-01-01"`, `END="today"`, `WINDOW=60`
 - [ ] `src/data.py`: `load_prices(ticker)` → downloads via `yfinance`, caches to
       `data/raw/NFLX.csv`, returns a tidy DataFrame. Never re-hit the network if cached.
-- [ ] `notebooks/01`: pull NFLX + peers (`DIS`, `SPY`, and optionally `AMZN`, `WBD`) — the peers
+- [ ] `notebooks/01`: pull NFLX + peers (`DIS`, `SPY`, and optionally `AMZN`, `WBD`), since the peers
       power the correlation section
 - [ ] Sanity checks: business-day continuity, no NaNs, no duplicate dates, no zero/negative prices
 - [ ] Commit
 - **Done when:** `python -c "from src.data import load_prices; print(load_prices('NFLX').tail())"` works
 
-### Session 2 — EDA (2.5h) — *ports the Fares Sayah notebook*
+### Session 2. EDA (2.5h), porting the reference EDA template
 - [ ] Closing price history + volume
 - [ ] 10 / 20 / 50-day moving averages overlay
 - [ ] Daily returns series + histogram; note the fat tails vs. a normal fit
-- [ ] Correlation heatmap of NFLX vs. peers (returns **and** prices — explain why the price
+- [ ] Correlation heatmap of NFLX vs. peers (returns **and** prices), explaining why the price
       correlation is the misleading one)
 - [ ] Risk-vs-return scatter (mean return vs. std dev) across the peer set
 - [ ] Annotate the 2022 subscriber-loss crash (~-35% in a day) as the concrete example of
@@ -200,12 +200,12 @@ credibility upgrade and it is the reason for the split.
 - [ ] Save every figure to `reports/figures/`
 - **Done when:** 6+ committed PNGs and a written paragraph per chart
 
-### Session 3 — Time-series rigor (2.5h) — *ports the andreshg notebook*
+### Session 3. Time-series rigor (2.5h), porting the time series guide
 - [ ] Chronological order + equidistant timestamp check; explain why markets are closed weekends
       and why we do **not** reindex to calendar days
 - [ ] **ADF test on raw close** → expect *fails to reject* (non-stationary)
 - [ ] **ADF test on log returns** → expect *rejects* (stationary). This single contrast is the
-      analytical core of the whole project — it is *why* the naive baseline is so hard to beat
+      analytical core of the whole project, because it is *why* the naive baseline is so hard to beat
 - [ ] Log transform + first differencing
 - [ ] Seasonal decomposition (trend / seasonal / residual)
 - [ ] **ACF / PACF** plots on returns → read off candidate ARIMA (p, d, q)
@@ -214,23 +214,23 @@ credibility upgrade and it is the reason for the split.
 - **Done when:** you can state, in one sentence with numbers, whether NFLX daily returns are
   autocorrelated
 
-### Session 4 — Baselines + classical models (2.5h)
+### Session 4. Baselines + classical models (2.5h)
 - [ ] `src/models/baselines.py`: naive (persistence), drift, SMA(k), EMA(α)
 - [ ] `src/evaluate.py`: RMSE, MAE, MAPE, **directional accuracy**, and a `walk_forward()`
       rolling-origin evaluator
 - [ ] ARIMA via `statsmodels` using the (p,d,q) from ACF/PACF; then `pmdarima.auto_arima` and
       compare the chosen orders
-- [ ] *(Optional, if time)* Prophet — ProjectPro and Interview Query both mention it; it is a
+- [ ] *(Optional, if time)* Prophet. ProjectPro and Interview Query both mention it; it is a
       good "I know when the interpretable tool is enough" note, but it is **not** required
 - [ ] Lock the results table format now; every later model appends a row to it
 - **Done when:** a committed results table with naive/drift/SMA/EMA/ARIMA rows
 
-### Session 5 — The LSTM (3h) — *the headline deliverable*
+### Session 5. The LSTM (3h), the headline deliverable
 - [ ] `src/windowing.py`: sliding-window builder. **Scaler fits on train only.**
 - [ ] `tests/test_windowing.py`: assert no test-set statistic can influence a training row.
       This is the one test worth writing and it is worth mentioning in interviews.
 - [ ] `src/models/lstm.py`: `LSTM(128, return_sequences=True) → LSTM(64) → Dense(25) → Dense(1)`,
-      Adam + MSE — same architecture as the Kaggle notebook, so the comparison is fair
+      Adam + MSE, the same architecture as the reference implementation, so the comparison is fair
 - [ ] Train properly: chronological 70/15/15 train/val/test, `batch_size=32`, up to 100 epochs,
       `EarlyStopping(patience=10, restore_best_weights=True)`
 - [ ] Plot train vs. val loss
@@ -241,7 +241,7 @@ credibility upgrade and it is the reason for the split.
       (volume + volatility + peers)
 - **Done when:** the results table is complete and you can explain each row
 
-### Session 6 — Write-up + publish (2.5h)
+### Session 6. Write-up + publish (2.5h)
 - [ ] `scripts/run_experiment.py` reproduces every number end to end
 - [ ] Write `README.md` in full (§6)
 - [ ] Final figures at consistent size/DPI
@@ -255,7 +255,7 @@ credibility upgrade and it is the reason for the split.
 
 | Metric | Why it is in the table |
 |---|---|
-| RMSE | Because every tutorial reports it — we include it *so we can show why it misleads* |
+| RMSE | Because every tutorial reports it. We include it *so we can show why it misleads* |
 | MAE | Less outlier-sensitive than RMSE |
 | MAPE | Scale-free; ProjectPro's second metric |
 | **Directional accuracy** | % of days the sign of the predicted change is right. This is the one a trading desk cares about. **Coin flip = 50%.** Anything at 50–53% is noise |
@@ -269,32 +269,32 @@ is exactly the behavior that reads as scientific maturity.
 
 ---
 
-## 6. README plan — the part that gets you the interview
+## 6. README plan: the part that gets you the interview
 
 Recruiters and hiring managers read the README and maybe two figures. Structure:
 
 1. **One-line summary** + the honest headline result, stated up front
-2. **Screenshot** — the best single figure (prediction vs. actual vs. naive baseline)
-3. **Results table** — every model, every metric, bolded winner
-4. **The finding** — 2–3 paragraphs: why the LSTM's low RMSE is not skill; ADF evidence that
+2. **Screenshot**: the best single figure (prediction vs. actual vs. naive baseline)
+3. **Results table**: every model, every metric, bolded winner
+4. **The finding**: two or three paragraphs on why the LSTM's low RMSE is not skill; ADF evidence that
    returns are stationary and near-unpredictable; what would actually be needed to do better
    (alternative data, higher frequency, cross-sectional signals)
-5. **What I built** — repo tour, why `src/` + tests exist
-6. **Methodology** — data, splits, leakage prevention, walk-forward validation
-7. **Reproduce it** — exact commands, verified by running them in a clean venv
-8. **Limitations** — no transaction costs, no slippage, no survivorship-bias handling,
+5. **What I built**: repo tour, why `src/` + tests exist
+6. **Methodology**: data, splits, leakage prevention, walk-forward validation
+7. **Reproduce it**: exact commands, verified by running them in a clean venv
+8. **Limitations**: no transaction costs, no slippage, no survivorship-bias handling,
    single ticker, not investment advice
-9. **Sources** — credit all four references explicitly
+9. **Sources**: credit all four references explicitly
 
 Rules: no emoji-stuffed headers, no "🚀 Awesome"; every claim backed by a number in the table;
 figures committed as PNG so they render on GitHub; and **run your own reproduce commands in a
-fresh venv before you push** — a broken quickstart is the fastest way to lose a reader.
+fresh venv before you push**. A broken quickstart is the fastest way to lose a reader.
 
 ---
 
-## 7. Résumé bullets (draft — finalize with real numbers in Session 6)
+## 7. Résumé bullets (draft; finalize with real numbers in Session 6)
 
-> **Netflix Stock Forecasting — Time Series & Deep Learning** · Python, TensorFlow/Keras,
+> **Netflix Stock Forecasting: Time Series & Deep Learning** · Python, TensorFlow/Keras,
 > statsmodels, pandas · [github.com/…]
 > - Built an end-to-end forecasting pipeline for NFLX equity data (Yahoo Finance, 10 yrs daily),
 >   comparing LSTM sequence models against naive, moving-average, and ARIMA baselines under
@@ -310,14 +310,14 @@ fresh venv before you push** — a broken quickstart is the fastest way to lose 
 
 ## 8. Open questions to settle in Session 1
 
-1. **Date range** — 2015→present (~10 yrs, includes the 2022 crash and the streaming-wars regime
+1. **Date range**: 2015→present (~10 yrs, includes the 2022 crash and the streaming-wars regime
    shift) or 2019→present (matches ProjectPro's window, more homogeneous)? *Recommendation:
    2015→present, and note the regime break explicitly.*
-2. **Prediction target** — next-day close (matches the sources) or next-day return?
+2. **Prediction target**: next-day close (matches the sources) or next-day return?
    *Recommendation: next-day close as the headline for comparability, next-day return as the
    ablation. Do both.*
-3. **Prophet** — include or cut? *Recommendation: optional; only if Sessions 1–5 finish on time.*
-4. **GitHub repo name/visibility** — must be **public** to be linkable from a résumé.
+3. **Prophet**: include or cut? *Recommendation: optional; only if Sessions 1 to 5 finish on time.*
+4. **GitHub repo name/visibility**: must be **public** to be linkable from a résumé.
 
 ---
 

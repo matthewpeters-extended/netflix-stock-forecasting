@@ -1,106 +1,212 @@
 # Netflix (NFLX) Stock Price Forecasting
 
-**Does an LSTM actually beat a naive "tomorrow = today" baseline at predicting Netflix's daily closing price?**
+**Can a deep learning model predict Netflix's next day closing price better than assuming tomorrow
+equals today?**
 
-This project builds both, evaluates them honestly under walk-forward validation, and reports the
-answer — including if the answer is unflattering to the deep learning model.
+I built the models to find out: four statistical baselines, two ARIMA specifications, and three
+LSTM variants, all scored on the same held out test period. The answer turned out to be no, and
+the reason why is more interesting than the answer.
 
-**Status:** Planning and scaffolding complete. Modeling not yet started.
-See [`WALKTHROUGH.md`](WALKTHROUGH.md) for the step-by-step build log and [`PLAN.md`](PLAN.md)
-for the full execution plan.
+> **Headline result.** Across 441 test days, no model beat a naive "tomorrow equals today"
+> forecast. One LSTM configuration appeared to, reaching 55.15% directional accuracy against a 50%
+> coin flip with a one sided binomial p of 0.018. Retraining that identical model across five
+> random seeds dropped the mean to 51.51% (p = 0.28), beating the baseline in one run out of five.
+> **The edge was seed variance, not signal.**
 
----
-
-## Why this project is framed the way it is
-
-Search GitHub for "LSTM stock prediction" and you get thousands of repositories that do the same
-thing: feed 60 days of closing prices into an LSTM, predict day 61, plot a line that hugs the
-actual price almost perfectly, report a small RMSE, and stop.
-
-That result is an illusion, and the reason is worth stating precisely.
-
-Daily equity prices behave close to a random walk. When you train a network to minimize squared
-error on the *price level*, the best available answer is approximately "yesterday's price." The
-model learns to copy its most recent input with a one-day lag. On a chart this looks like
-near-perfect prediction. In reality it has learned nothing that a one-line baseline doesn't
-already know.
-
-ProjectPro's own write-up concedes the point — machine learning techniques "remain unreliable for
-real-world market prediction." So rather than reproduce the illusion, this project measures it:
-
-- Build the LSTM properly, using the same architecture the popular tutorial uses, so the
-  comparison is fair.
-- Build the baselines it is never compared against — naive persistence, drift, SMA, EMA, ARIMA.
-- Evaluate everything on identical chronological splits with rolling-origin validation.
-- Report **directional accuracy** (was the sign of the predicted move right?) alongside RMSE.
-  A coin flip scores 50%.
-
-If the LSTM does not win, that is the finding, and it gets written up as the finding.
-
----
-
-## The four defects this project fixes
-
-The most-referenced Kaggle notebook on this topic (Fares Sayah, 899k views) contains four
-methodological problems that propagate into most derivative projects. Each becomes a section of
-the final write-up:
-
-| # | Defect | Fix |
-|---|---|---|
-| 1 | **Data leakage.** `scaler.fit_transform()` is called on the entire series *before* the train/test split, so the scaler sees future minimums and maximums. | Fit the scaler on training data only; transform the test set. Enforced by a unit test. |
-| 2 | **No baseline.** An RMSE is reported with nothing to compare it against. | Naive, drift, SMA, EMA, and ARIMA baselines on identical splits. |
-| 3 | **Price-space evaluation only.** RMSE on a trending price series rewards lag, not skill. | Add MAE, MAPE, directional accuracy, RMSE on returns, and prediction-vs-actual lag correlation. |
-| 4 | **One arbitrary split.** `epochs=1`, `batch_size=1`, no validation set, no early stopping. | Chronological 70/15/15 split, early stopping on validation loss, walk-forward evaluation. |
-
-The notebook also no longer runs as written: `yf.pdr_override()` has been removed from `yfinance`,
-and `yfinance` now defaults to `auto_adjust=True`, so there is no `Adj Close` column unless you
-ask for one. Both are handled in `src/data.py`.
+Python · TensorFlow/Keras · statsmodels · scikit-learn · pandas
 
 ---
 
 ## Results
 
-Pending. Populated by `scripts/run_experiment.py` in the final session.
+Every model, one test set, identical chronological splits. NFLX daily bars, 2015 to 2026, with the
+final 15% held out.
 
-| Model | RMSE | MAE | MAPE | Directional accuracy |
-|---|---|---|---|---|
-| Naive (persistence) | — | — | — | — |
-| Drift | — | — | — | — |
-| SMA | — | — | — | — |
-| EMA | — | — | — | — |
-| ARIMA | — | — | — | — |
-| LSTM | — | — | — | — |
+| Model | RMSE | vs naive | MAE | MAPE % | Directional % |
+|---|---|---|---|---|---|
+| **Naive (persistence)** | **2.1295** | **1.000** | 1.4774 | 1.519 | no position |
+| ARIMA(0,1,0) | 2.1295 | 1.000 | 1.4774 | 1.519 | no position |
+| Drift | 2.1297 | 1.000 | 1.4776 | 1.519 | 49.31 |
+| ARIMA(1,1,1) | 2.1303 | 1.000 | 1.4790 | 1.520 | 50.60 |
+| LSTM (log returns, 5 seed mean) | 2.1295 | 1.000 | 1.4770 | 1.519 | 51.51 |
+| EMA(2) | 2.2831 | 1.072 | 1.6070 | 1.647 | 50.57 |
+| SMA(2) | 2.3957 | 1.125 | 1.6988 | 1.743 | 48.17 |
+| LSTM (leaky scaler) | 13.4420 | 6.312 | 11.4099 | 10.696 | 50.57 |
+| LSTM (price levels, honest scaler) | 29.9704 | 14.074 | 28.2839 | 27.654 | 51.02 |
 
-Coin-flip directional accuracy is 50%. Anything in the 50–53% range is noise, not signal.
+A coin flip scores 50% on direction, with a standard error of ±2.38% over 441 days. Every model in
+that column sits inside the band a fair coin produces.
 
-**Pre-registered expectation**, recorded before any model was run: the LSTM will land within a few
-percent of the naive baseline on RMSE and near 50% on directional accuracy.
+Naive and ARIMA(0,1,0) show "no position" rather than a number because they predict no change at
+all. A model that declines to make a directional claim cannot be scored on directional accuracy,
+and putting a number there would be inventing one.
+
+Reproduce the table:
+
+```bash
+python scripts/run_experiment.py
+```
 
 ---
 
-## Data
+## What I found, and what it means
 
-- **Ticker:** NFLX, daily bars from Yahoo Finance via `yfinance`
-- **Peers** (for the correlation and risk sections): DIS, SPY, AMZN, WBD
-- **Range:** 2015-01-01 to present — roughly ten years, deliberately spanning the 2022
-  subscriber-loss crash and the streaming-wars regime shift
-- Adjusted closes; business-day index, not reindexed to calendar days
+### 1. Classical model selection independently chose the naive forecast
 
-Raw data is cached to `data/raw/` and gitignored. `src/data.py` regenerates it from scratch.
+I fitted a grid of six ARIMA specifications and let AIC pick. It selected **ARIMA(0,1,0)**, which
+has no autoregressive terms and no moving average terms. Written out, that model is:
+
+$$P_t = P_{t-1} + \varepsilon_t$$
+
+which is a random walk, which is the naive forecast. Given a menu including several models with
+real parameters, the information criterion chose the one with none.
+
+The same thing happened when I tuned the moving average windows on validation data. Error rose
+monotonically with window length, so the shortest window available won, and its limit as the window
+shrinks to a single day is again the naive forecast. Three independent routes, unit root testing,
+AIC, and hyperparameter tuning, all arrived at the same place.
+
+### 2. Returns are not normally distributed, and it is not close
+
+![Return distribution](reports/figures/02_return_distribution.png)
+
+Left panel, linear axis: the normal fit looks reasonable. Right panel, same data on a log axis: the
+observed bars extend far past where the fitted curve has effectively reached zero.
+
+Counting the extreme days makes it concrete:
+
+| Threshold | Observed days | A normal distribution predicts | Ratio |
+|---|---|---|---|
+| beyond 3 sigma | 47 | 7.92 | 5.9x |
+| beyond 4 sigma | 17 | 0.19 | 91x |
+| beyond 5 sigma | 10 | 0.002 | **5,943x** |
+
+NFLX excess kurtosis is 17.1, where a normal distribution scores 0. Every peer I checked was
+similarly fat tailed, so this is a property of equity returns rather than a Netflix quirk. Any
+confidence interval or risk estimate built on normality understates crash risk, and understates it
+by orders of magnitude in the far tail.
+
+### 3. Direction is unpredictable, but magnitude is not
+
+This is the most useful thing the analysis turned up.
+
+![ACF of absolute returns](reports/figures/03_acf_abs_returns.png)
+
+| Series | Ljung-Box p at lag 1 | Interpretation |
+|---|---|---|
+| Returns (direction included) | 0.849 | no detectable structure |
+| Absolute returns (magnitude only) | 0.000 | strong, persistent structure |
+
+Yesterday's return says essentially nothing about today's. Yesterday's *move size* says a great
+deal: volatility clusters, and the autocorrelation stays significant past sixty lags.
+
+That split explains why this problem is hard in the specific way that it is. It also points at the
+version of it that is tractable, which is forecasting volatility rather than direction.
+
+I confirmed the underlying non-stationarity with two tests that have opposite null hypotheses, so
+agreement between them is stronger evidence than either alone:
+
+| Series | ADF p | KPSS p | Verdict |
+|---|---|---|---|
+| Close (price) | 0.699 | 0.01 | non-stationary |
+| Log price | 0.198 | 0.01 | non-stationary |
+| Log returns | 0.000 | 0.10 | **stationary** |
+
+### 4. A lagged copy looks like an excellent forecast until you zoom in
+
+![Prediction lag](reports/figures/04_predictions_and_lag.png)
+
+Top panel is the full test period, where the naive forecast tracks the actual price so closely the
+lines are hard to separate. Bottom panel is the first 45 days of the same data.
+
+The prediction is not tracking the price. It is copying it one day late. Zoomed out that shift is
+invisible and the fit looks superb, which is exactly why a chart like the top panel is not evidence
+of anything.
+
+### 5. Fixing the data leak made the model look worse, which is the point
+
+The conventional approach to this problem fits a MinMaxScaler on the entire price series and only
+afterwards splits into train and test. The scaler has then already seen the highest and lowest
+prices of the test period before training starts.
+
+I fitted the scaler on training data only, and enforced it with a unit test. Then I ran the leaky
+version deliberately, changing nothing else, to measure what the bug is worth:
+
+| Version | RMSE | vs naive |
+|---|---|---|
+| Scaler fitted on training data only | 29.97 | 14.1x |
+| Scaler fitted on the full series | 13.44 | 6.3x |
+
+**The leak roughly halves the reported error.** Same architecture, same seed, same splits, one line
+different.
+
+![Honest LSTM](reports/figures/05_honest_lstm.png)
+
+The honest version exposes what the leak was hiding. NFLX topped out near $69 in my training period
+and reached $134 in the test period, so the test set lies almost entirely above anything the network
+saw. A network trained on inputs scaled to [0, 1] cannot produce outputs near 2.0, so it
+under-predicts by an average of $28 a day. Fitting the scaler on everything makes that symptom
+vanish without fixing the cause.
+
+The real fix is a different target. Prices are non-stationary and unbounded; log returns are
+stationary and centred near zero. Predicting returns and converting back with
+$\hat{P}_{t+1} = P_t e^{\hat{r}_{t+1}}$ removed the extrapolation problem entirely and brought RMSE
+level with the baseline.
+
+### 6. The apparent win was seed luck
+
+![Seed sweep](reports/figures/05_seed_sweep.png)
+
+The log return LSTM, trained once, reached 55.15% directional accuracy. That is 2.16 standard
+errors above chance, one sided binomial p = 0.018. It looked like a genuine result and I was ready
+to report it as one.
+
+Then I retrained the identical model across five random seeds:
+
+| Seed | RMSE | Directional % |
+|---|---|---|
+| 7 | 2.1259 | 55.15 |
+| 17 | 2.1309 | 50.36 |
+| 42 | 2.1311 | 49.10 |
+| 123 | 2.1296 | 51.69 |
+| 2024 | 2.1301 | 51.26 |
+| **mean** | **2.1295** | **51.51** |
+
+Mean directional accuracy 51.51%, p = 0.28, beating the naive RMSE in one run out of five. The mean
+RMSE landed on the baseline to four decimal places.
+
+Had I trained once and stopped, which is what the conventional implementation does, I would have
+published a statistically significant directional edge that does not exist.
 
 ---
 
-## Repository layout
+## Why this repository is built the way it is
+
+Each safeguard targets a specific way of fooling yourself, and I added them because each one is
+routinely skipped:
+
+| Safeguard | The failure it prevents |
+|---|---|
+| Scaler fitted on training data only, with a unit test | Future minima and maxima leaking into training |
+| Chronological splits, never shuffled | Training on the future and testing on the past |
+| Baselines fitted on identical splits | Reporting an error with nothing to compare it against |
+| Directional accuracy alongside RMSE | Low error on a trending series being mistaken for skill |
+| Window parameters tuned on validation, never test | Fitting to the data you are about to be scored on |
+| Rolling one step ahead ARIMA forecasts | Compounding errors making a fair comparison impossible |
+| Seed sweep | Reporting one lucky draw as a result |
+
+The seed sweep is the one that caught something here. That was not predictable in advance, which is
+the argument for having all of them.
+
+---
+
+## Repository
 
 ```
 netflix-stock-forecasting/
-├── README.md               <- you are here
-├── WALKTHROUGH.md          <- first-person, step-by-step build log
-├── PLAN.md                 <- full execution plan, session by session
-├── requirements.txt
-├── data/
-│   ├── raw/                <- cached yfinance pulls (gitignored)
-│   └── processed/          <- feature matrices (gitignored)
+├── README.md                   <- this page
+├── WALKTHROUGH.md              <- how I built it, step by step
+├── PLAN.md                     <- the original execution plan
 ├── notebooks/
 │   ├── 01_data_collection.ipynb
 │   ├── 02_eda_market_analysis.ipynb
@@ -108,81 +214,95 @@ netflix-stock-forecasting/
 │   ├── 04_baselines_and_arima.ipynb
 │   ├── 05_lstm.ipynb
 │   └── 06_results.ipynb
-├── src/                    <- importable, tested code; notebooks call into this
-│   ├── config.py           <- ticker, date range, window size, split ratios
-│   ├── data.py             <- download + on-disk cache
-│   ├── features.py         <- moving averages, returns, volatility, lags, calendar features
-│   ├── windowing.py        <- leak-free sequence builder and scaler discipline
-│   ├── evaluate.py         <- RMSE, MAE, MAPE, directional accuracy, walk-forward
+├── src/                        <- importable, tested code the notebooks call into
+│   ├── config.py               <- every tunable in one place
+│   ├── data.py                 <- download and cache, with validation
+│   ├── features.py             <- returns, moving averages, volatility, lags, calendar encoding
+│   ├── windowing.py            <- leak free sequence construction
+│   ├── diagnostics.py          <- ADF, KPSS, Ljung-Box
+│   ├── evaluate.py             <- RMSE, MAE, MAPE, directional accuracy, lag correlation
 │   ├── plots.py
 │   └── models/
-│       ├── baselines.py    <- naive, drift, SMA, EMA
-│       ├── arima.py
+│       ├── baselines.py        <- naive, drift, SMA, EMA
+│       ├── arima.py            <- AIC grid search, rolling one step ahead forecasts
 │       └── lstm.py
-├── scripts/run_experiment.py   <- one command reproduces every number above
-├── reports/figures/            <- committed PNGs so this page renders on GitHub
-├── tests/                      <- pytest; the leakage test is the important one
+├── scripts/run_experiment.py   <- reproduces the results table
+├── tests/test_windowing.py     <- the leakage tests
+├── reports/figures/            <- committed PNGs
 └── docs/
-    ├── SETUP.md            <- machine setup: Homebrew, Python, venv, GitHub CLI
-    └── sources.md          <- annotated bibliography
+    ├── SETUP.md                <- machine setup from scratch
+    └── sources.md              <- annotated bibliography
 ```
 
-The `src/` package exists on purpose. Notebooks alone read as coursework; a tested, importable
-module with a single reproducible entry point reads as engineering.
+The notebooks import from `src/` rather than defining logic inline, so the same code path runs in
+the notebooks, in the tests, and in the reproduction script.
 
 ---
 
-## Method
+## Data and method
 
-1. **Collect** NFLX and peer daily bars, cache locally, validate for gaps and duplicates.
-2. **Explore** — closing price and volume history, 10/20/50-day moving averages, daily return
-   distribution and its fat tails, peer correlation on returns *and* prices, risk-versus-return
-   scatter.
-3. **Establish stationarity.** Run the Augmented Dickey-Fuller test on raw closes (expected: fails
-   to reject — non-stationary) and on log returns (expected: rejects — stationary). This contrast
-   is the analytical core of the project: it is *why* the naive baseline is so hard to beat.
-4. **Engineer features** — lags, rolling mean and standard deviation, realized volatility,
-   cyclical day-of-week encoding. Read candidate ARIMA orders off the ACF/PACF plots.
-5. **Baseline** — naive, drift, SMA, EMA, then ARIMA and auto-ARIMA.
-6. **Model** — `LSTM(128) → LSTM(64) → Dense(25) → Dense(1)`, Adam and MSE, 60-day window, with
-   train-only scaling, early stopping, and ablations on returns and multivariate inputs.
-7. **Compare** every model on one table, and diagnose the LSTM's lag against the naive baseline
-   directly.
+- **NFLX daily bars**, 2015-01-02 to present, 2,936 sessions, via `yfinance`
+- **Peers** DIS, WBD, AMZN, SPY for correlation and risk comparison
+- Prices are split and dividend adjusted (`auto_adjust=True`). NFLX split 7 for 1 in 2015 and 10
+  for 1 in 2025, so unadjusted prices would show two artificial crashes of 86% and 90%
+- Splits are chronological: **70% train, 15% validation, 15% test**, never shuffled
+- Partial sessions are detected by volume and excluded, so an unfinished trading day never enters
+  the data
+- LSTM architecture is `LSTM(128) -> LSTM(64) -> Dense(25) -> Dense(1)`, Adam, mean squared error,
+  60 day window, batch size 32, early stopping on validation loss with best weights restored
+
+The architecture deliberately matches the conventional implementation of this project so that the
+comparison is about protocol rather than about network design.
 
 ---
 
-## Quickstart
+## Running it
 
 ```bash
+git clone https://github.com/matthewpeters-extended/netflix-stock-forecasting.git
+cd netflix-stock-forecasting
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python scripts/run_experiment.py
 ```
 
-Setting up a Mac from scratch — Homebrew, Python 3.12, the GitHub CLI, the virtual environment —
-is covered step by step in [`docs/SETUP.md`](docs/SETUP.md).
+Add `--skip-lstm` for the baselines and ARIMA only, which takes about three seconds. The full run
+trains eight networks and takes a few minutes.
+
+```bash
+pytest tests/ -q
+```
+
+Setting up a machine from scratch, Homebrew through to Jupyter, is covered in
+[`docs/SETUP.md`](docs/SETUP.md).
 
 ---
+
+## What would actually be needed to do better
+
+Not a bigger network. Daily closing prices carry very little forecastable information about
+direction, which is what an efficient market implies and what the autocorrelation testing measured
+directly.
+
+- **Forecast volatility instead of direction.** Absolute returns are strongly autocorrelated out
+  past sixty lags. GARCH style models handle that well, and it is genuinely tractable on this data.
+- **Bring in information beyond price.** Earnings, subscriber numbers, news sentiment. Nothing here
+  could have anticipated the 35% single day fall on 2022-04-20, because no model in this repository
+  sees anything except past prices.
+- **Higher frequency data**, where microstructure effects create short lived predictability.
+- **Cross sectional models** ranking many stocks against each other rather than forecasting one in
+  isolation.
 
 ## Limitations
 
-- Single ticker. Nothing here is validated cross-sectionally.
-- No transaction costs, slippage, market impact, or liquidity constraints are modeled, so
-  directional accuracy is not the same as profitability.
-- Daily bars only. Any genuine short-horizon signal is likely to live at higher frequency or in
-  data that is not price history.
-- No news, sentiment, or fundamental data — which is precisely why exogenous shocks such as the
-  2022 subscriber-loss crash are unpredictable to every model here.
-- Not investment advice. This is a methodology exercise.
-
----
+- One ticker, so nothing here is validated across a universe of stocks
+- One test period, which happens to contain the largest drawdown in the series
+- Five seeds is enough to detect the variance, not to characterise it precisely
+- No transaction costs, slippage, market impact or liquidity constraints, so directional accuracy
+  would not translate into profit even if it were real
+- Daily bars only, price and volume only
+- Educational project. Not investment advice.
 
 ## Sources
 
-Four references, merged into one pipeline rather than treated as separate projects. Full
-annotations in [`docs/sources.md`](docs/sources.md).
-
-- ProjectPro — [Stock Price Prediction Using Machine Learning](https://www.projectpro.io/article/stock-price-prediction-using-machine-learning-project/571) — problem framing, SMA/EMA baselines, RMSE and MAPE, the limitations argument
-- Interview Query — [16 Best Fintech Machine Learning Projects](https://www.interviewquery.com/p/fintech-machine-learning-projects), project #2 "Predicting Netflix Stock Prices" — the project specification
-- Fares Sayah — [Stock Market Analysis + Prediction using LSTM](https://www.kaggle.com/code/faressayah/stock-market-analysis-prediction-using-lstm) — the EDA template and the LSTM recipe being tested
-- andreshg — [TimeSeries Analysis: A Complete Guide](https://www.kaggle.com/code/andreshg/timeseries-analysis-a-complete-guide/notebook) — ADF, differencing, decomposition, ACF/PACF, ARIMA
+Method references are credited in [`docs/sources.md`](docs/sources.md).

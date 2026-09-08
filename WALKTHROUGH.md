@@ -1,266 +1,336 @@
-# Walkthrough — How I Built This
+# Walkthrough: How I Built This
 
-A first-person, step-by-step account of the project. Part 1 covers the work that is done.
-Part 2 covers the steps still ahead, written the same way, so anyone reading this repo can follow
-along or reproduce it.
-
-**Where things stand:** Part 1 is complete. Part 2 has not been run yet — every step in it is
-marked as pending, and nothing in this document reports a result I have not actually produced.
+A step by step account of the project, in the order I actually did it, with the reasoning behind
+each design decision. [`README.md`](README.md) covers what I found; this page covers how the thing
+is put together and why.
 
 ---
 
-# Part 1 — What I have done so far
+## Step 1: I chose the problem, then changed the question
 
-## Step 1: I picked a project, then questioned the framing
+The brief was short: predict Netflix stock prices from Yahoo Finance history using an LSTM in
+Keras.
 
-I started from Interview Query's list of fintech machine learning projects and chose project #2,
-"Predicting Netflix Stock Prices." The specification is short: predict NFLX prices from historical
-Yahoo Finance data using an LSTM or RNN in Keras.
-
-Before writing any code I went looking at how other people had done it, and that changed what I
-wanted to build. The most-referenced implementation is a Kaggle notebook by Fares Sayah with
-roughly 900,000 views, and its structure is repeated across thousands of GitHub repositories: take
-60 days of closing prices, scale them, push them through a two-layer LSTM, predict the next day,
-plot it, report RMSE, done. The chart always looks fantastic — the predicted line sits almost on
-top of the actual price.
+Before writing code I looked at how this problem is usually solved, and that changed what I wanted
+to build. The standard implementation is consistent wherever it appears: take 60 days of closing
+prices, scale them into [0, 1], push them through two stacked LSTM layers, predict the next day,
+plot the result, report RMSE, stop. The chart always looks superb, with the predicted line sitting
+almost exactly on the actual price.
 
 I did not trust it, for a specific reason. Daily equity prices behave close to a random walk. If I
-train a network to minimize squared error on the *price level*, the lowest-error answer available
-to it is roughly "output yesterday's price." A model that has learned to copy its last input with a
-one-day lag will produce exactly that beautiful chart and exactly that small RMSE, while knowing
-nothing useful.
+train a network to minimise squared error on the *price level*, the lowest error answer available
+is approximately "output yesterday's price". A model that has learned to copy its most recent input
+with a one day lag produces exactly that beautiful chart and exactly that small RMSE, while having
+learned nothing usable.
 
-So I decided the project would not be "build an LSTM that predicts Netflix." It would be:
+So I reframed the project around a question that has a falsifiable answer:
 
-> Does the LSTM actually beat a naive "tomorrow = today" baseline — and if not, can I show
-> precisely why it only looks like it does?
+> Does the LSTM actually beat a naive "tomorrow equals today" forecast, and if not, can I show
+> precisely why it only appears to?
 
-That reframing is the whole reason this repo is worth reading. It also means I have to be willing
-to publish a negative result, so I wrote down my expectation in advance (README, "pre-registered
-expectation") before running anything.
-
-## Step 2: I read all four sources and worked out what each one was actually for
-
-I had four links and initially assumed they were four alternative tutorials. They are not. Read
-together, they decompose cleanly into one pipeline, and I wrote up the details in
-[`docs/sources.md`](docs/sources.md).
-
-- **ProjectPro's article** gave me the problem framing, the simple statistical baselines (SMA and
-  EMA), and the metrics to report (RMSE and MAPE). Its most useful section is the one on
-  limitations — it states plainly that these models could not follow the trends disrupted by
-  COVID, and that ML techniques remain unreliable for real market prediction. That is the argument
-  my project is designed to test rather than repeat.
-- **Interview Query** gave me the specification: NFLX, Yahoo Finance, Keras. Notably, its own
-  "extra resources" section links to the other two Kaggle notebooks, which confirmed my read that
-  these are one project's worth of material and not four.
-- **Fares Sayah's notebook** gave me two things: an exploratory-analysis template built around six
-  questions (price over time, daily returns, moving averages, correlation between stocks, value at
-  risk, and prediction), and the exact LSTM recipe I intend to put on trial.
-- **andreshg's time series guide** gave me the rigor the other three are missing — stationarity
-  testing with the Augmented Dickey-Fuller test, transforming and differencing, seasonal
-  decomposition, ACF and PACF, ARIMA and auto-ARIMA. It demonstrates all of this on groundwater
-  data, so my job is to port the method to NFLX.
-
-The Kaggle pages do not render their notebook bodies in plain HTML, so I read the executed
-notebooks directly from the result frames rather than relying on the summary pages. That is worth
-mentioning because it is how I found the next two things.
-
-## Step 3: I catalogued the defects in the tutorial I am reproducing
-
-Reading the actual notebook source rather than a description of it turned up four methodological
-problems. These are now the backbone of the project, because fixing each one is a concrete,
-explainable piece of work:
-
-1. **Data leakage.** The notebook calls `scaler.fit_transform(dataset)` on the entire series and
-   only afterwards splits into train and test. The scaler has therefore already seen the future
-   maximum and minimum of the series. The fix is to fit on training data only. I am going to write
-   a unit test that enforces it, because "I found a leak" is a claim, and "here is the test that
-   fails if the leak comes back" is evidence.
-2. **No baseline at all.** An RMSE is reported in isolation. There is nothing to say whether it is
-   good.
-3. **Evaluation in price space only.** RMSE on a trending price series systematically rewards a
-   lagging prediction. I will add MAE, MAPE, directional accuracy, RMSE computed on returns, and a
-   lag-correlation diagnostic between prediction and actual.
-4. **A single arbitrary split.** `epochs=1`, `batch_size=1`, no validation set, no early stopping,
-   no walk-forward testing.
-
-## Step 4: I found that the reference notebook no longer runs
-
-It was published four years ago and two APIs have moved underneath it:
-
-- It calls `yf.pdr_override()`, which has since been **removed** from `yfinance`. The
-  `pandas_datareader` bridge is not needed at all any more; `yf.download()` and
-  `yf.Ticker(...).history()` work directly.
-- `yfinance` now defaults to `auto_adjust=True`, so there is **no `Adj Close` column** unless you
-  explicitly ask for unadjusted data. Every line in the notebook that references `Adj Close` fails.
-
-There is also a fragility issue: the notebook assigns downloaded frames into `globals()` in a loop,
-and multi-ticker downloads now come back as a MultiIndex column frame. I am using an explicit
-dictionary of ticker to DataFrame instead.
-
-I am recording all of this because "modernized a deprecated data pipeline" is a real piece of work
-and it is invisible unless I write it down.
-
-## Step 5: I checked what my machine can actually run
-
-Before planning sessions I checked the environment, and it is bare:
-
-- macOS 26.6.2 on Apple Silicon (`arm64`)
-- System Python **3.9.6** only, with pip 21.2.4 — no Homebrew, no conda, no pyenv, no uv
-- `pandas` and `numpy` are not installed; there is no Jupyter
-- `git` is present; the GitHub CLI (`gh`) is not
-
-Two consequences I planned around. First, Python 3.9 sits at the edge of TensorFlow's support
-window, so the environment step includes an explicit import check and two documented fallbacks:
-pin TensorFlow to `>=2.16,<2.18`, or install Python 3.12 from python.org, which needs no Homebrew.
-Second, without `gh` I will create the GitHub repository through the web interface and add the
-remote by hand.
-
-I would rather discover this now than halfway through training a model.
-
-## Step 6: I scaffolded the repository
-
-I laid out the structure in [`PLAN.md`](PLAN.md) §3 and created it: `src/` for importable and
-tested code, `notebooks/` for the six-notebook narrative, `data/raw` and `data/processed`
-gitignored, `reports/figures/` for committed PNGs so the README renders on GitHub, `tests/`,
-`scripts/run_experiment.py` as the single reproduction entry point, and `docs/sources.md`.
-
-The `src/` package is deliberate. Notebooks on their own read as coursework. A tested module that
-the notebooks import from, plus one command that regenerates every number in the README, reads as
-engineering — and it is the cheapest credibility upgrade available to me.
-
-I also wrote the full six-session plan, the metric definitions, the scope guardrails (no intraday
-data, no P&L backtest, no transformers, no sentiment analysis — each of those is a *different*
-project), and draft résumé bullets with the numbers left blank.
+That reframing is what the repository is organised around. It also commits me to publishing an
+unflattering result if that is what the evidence says, so I wrote my expectation down in advance
+before running anything.
 
 ---
 
-# Part 2 — The steps ahead
+## Step 2: I designed the architecture before writing the first module
 
-Not yet run. Each step lists what I will do and what "done" means, so progress is checkable rather
-than vibes-based.
+Two decisions here shaped everything after.
 
-## Step 7: Set up the environment — pending
+**Logic lives in `src/`, not in notebooks.** Notebooks are excellent for narrative and terrible for
+reuse: state is invisible, cells run out of order, and nothing can be tested. So every function
+lives in an importable package and the notebooks call into it. The same code path runs in the
+notebooks, in `pytest`, and in `scripts/run_experiment.py`, which means the story the notebooks
+tell cannot drift away from the numbers the script produces.
 
-```bash
-cd ~/projects/netflix-stock-forecasting
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip setuptools wheel
-pip install -r requirements.txt
-python -c "import tensorflow as tf, sys; print(sys.version.split()[0], tf.__version__)"
+**Every tunable lives in `src/config.py`.** Ticker, date range, peer list, window size, split
+fractions, random seed. If a number affects a result, it is in that file and nowhere else. This
+sounds fussy on a project this size and pays for itself the moment you want to know whether a
+result depends on a choice you made three weeks earlier.
+
+The layout that fell out of those two decisions:
+
+```
+src/
+├── config.py       <- every tunable
+├── data.py         <- acquisition, caching, validation
+├── features.py     <- returns, moving averages, volatility, lags, calendar encoding
+├── windowing.py    <- sequence construction and scaler discipline
+├── diagnostics.py  <- ADF, KPSS, Ljung-Box
+├── evaluate.py     <- metrics, splits, lag correlation
+├── plots.py        <- shared figure style and saving
+└── models/
+    ├── baselines.py
+    ├── arima.py
+    └── lstm.py
 ```
 
-The full machine setup — Homebrew, Python 3.12, the GitHub CLI, git identity — is written up in
-[`docs/SETUP.md`](docs/SETUP.md), because my machine started with nothing but Apple's system
-Python 3.9.
-
-That last line is the real test. If TensorFlow will not import, I pin it or swap the LSTM to
-PyTorch. I have given myself until the end of the first session to decide, so it cannot block the
-exploratory work.
-
-**Done when:** the version check prints without error, and `git init` plus a first commit is pushed
-to a public GitHub repository.
-
-## Step 8: Collect and validate the data — pending
-
-I will write `src/config.py` (ticker, date range, 60-day window, split ratios) and `src/data.py`,
-which downloads through `yfinance`, caches to `data/raw/NFLX.csv`, and never re-hits the network if
-the cache exists. Then I pull NFLX plus DIS, SPY, AMZN and WBD for the correlation work, and check
-for business-day continuity, duplicate dates, NaNs, and non-positive prices.
-
-I am using 2015 to present — about ten years — deliberately spanning the 2022 subscriber-loss crash
-and the streaming-wars regime shift, and I will note that regime break explicitly rather than
-pretend the series is homogeneous.
-
-**Done when:** `from src.data import load_prices; load_prices("NFLX").tail()` works from a clean
-shell.
-
-## Step 9: Exploratory analysis — pending
-
-Porting the Fares Sayah template to NFLX: closing price and volume history; 10, 20 and 50-day
-moving averages overlaid; the daily return series and its histogram, where I want to point out the
-fat tails against a normal fit; a correlation heatmap across the peer set on returns *and* on
-prices, explaining why the price correlation is the misleading one; and the risk-versus-return
-scatter of mean return against standard deviation.
-
-I will annotate the 2022 crash — Netflix lost roughly a third of its value in a day on a subscriber
-miss — as the concrete instance of ProjectPro's warning that news shocks break these models. No
-model in this repo sees news, so no model in this repo could have seen that coming.
-
-**Done when:** at least six figures are saved to `reports/figures/` and committed, each with a
-written paragraph of interpretation.
-
-## Step 10: Establish stationarity — pending
-
-This is the analytical core, ported from the andreshg guide. I run the Augmented Dickey-Fuller test
-twice:
-
-- On raw closing prices, where I expect it to **fail to reject** the null — the series is
-  non-stationary, it has a unit root, it wanders.
-- On log returns, where I expect it to **reject** — returns are stationary.
-
-That contrast is the mathematical statement of why the naive baseline is so hard to beat, and it is
-the thing I want to be able to explain out loud in an interview. Then log transform and first
-differencing, seasonal decomposition into trend, seasonal and residual components, and ACF and PACF
-plots on the returns to read off candidate ARIMA orders. Finally `src/features.py`: lags, rolling
-mean and standard deviation, realized volatility, and cyclical sine/cosine day-of-week encoding.
-
-**Done when:** I can state in one sentence, with actual numbers, whether NFLX daily returns are
-autocorrelated.
-
-## Step 11: Build the baselines — pending
-
-`src/models/baselines.py` gets naive persistence, drift, SMA and EMA. `src/evaluate.py` gets RMSE,
-MAE, MAPE, directional accuracy, and a rolling-origin `walk_forward()` evaluator. Then ARIMA
-through `statsmodels` using the orders I read off the ACF/PACF, followed by `auto_arima` so I can
-compare what the automatic search picks against what I chose by eye.
-
-I am locking the results-table format at this step. Every later model appends a row to the same
-table on the same splits — that is what makes the comparison honest.
-
-**Done when:** a committed results table with naive, drift, SMA, EMA and ARIMA rows filled in.
-
-## Step 12: Build the LSTM — pending
-
-`src/windowing.py` builds the sliding windows, and the scaler fits on training data only.
-`tests/test_windowing.py` asserts that no test-set statistic can influence a training row — the one
-test in this repo that genuinely matters.
-
-Then the same architecture as the notebook I am testing, so the comparison is fair:
-`LSTM(128, return_sequences=True) → LSTM(64) → Dense(25) → Dense(1)`, Adam, MSE. Trained properly
-this time: chronological 70/15/15 split, batch size 32, up to 100 epochs with early stopping on
-validation loss and best weights restored. I will plot training against validation loss.
-
-The diagnostic I most want is this: overlay the LSTM prediction, the actual price, and the naive
-baseline on one set of axes, then compute the cross-correlation between prediction and actual and
-find where it peaks. If the peak sits at one day, the model has learned persistence and nothing
-else, and I will be able to show that rather than assert it.
-
-Then two ablations — the LSTM trained on returns instead of prices, and a multivariate version with
-volume, volatility and peer prices as extra inputs.
-
-**Done when:** the results table is complete and I can explain every row in it.
-
-## Step 13: Write it up and publish — pending
-
-`scripts/run_experiment.py` regenerates every number end to end. I fill in the README's headline
-result and results table, write the two or three paragraphs explaining the finding, standardize the
-figures, freeze the dependency versions, run my own quickstart commands in a *fresh* virtual
-environment to prove they work, and push with repository topics set.
-
-Then I finalize the résumé bullets in [`PLAN.md`](PLAN.md) §7 with the real numbers.
-
-**Done when:** a stranger can clone the repository, run three commands, and reproduce the table.
+The module boundary I care about most is `windowing.py` being separate from `models/lstm.py`. Data
+preparation is where the leakage bug lives, so isolating it means it can be tested on its own,
+without training anything.
 
 ---
 
-## What I want this project to demonstrate
+## Step 3: I set up the machine, and hit the first real constraint
 
-Not that I can call `model.fit()`. That is the easy part and everyone has it.
+My Mac had Xcode Command Line Tools and `git`, and nothing else relevant. System Python 3.9.6 with
+pip 21, no Homebrew, no conda, no pandas, no Jupyter.
 
-What I want it to show is that I read the reference implementation closely enough to find a data
-leak in it, that I know why a low RMSE on a price series is a weak claim, that I know how to test
-whether a series is stationary and what follows from the answer, that I compare against baselines
-before believing a model, and that I will publish a result that does not flatter my model if that
-is what the evidence says.
+Python 3.9 sits at the edge of TensorFlow's support window, so rather than discover that halfway
+through I installed Homebrew, then Python 3.12, and built the project a virtual environment of its
+own. Then I verified TensorFlow imported *before* writing any modelling code, with two documented
+fallbacks ready if it had not. It imported cleanly, so neither was needed.
+
+I also checked what was actually installed rather than assuming, which turned out to matter:
+pandas 3.0 and numpy 2.5 are both recent majors. pandas 3.0 makes copy on write the default, so the
+`frame['new_col'] = values` pattern on a slice, which older tutorials use freely, now errors or
+silently does nothing rather than warning. Knowing that in advance saved a confusing debugging
+session later.
+
+The whole process is written up in [`docs/SETUP.md`](docs/SETUP.md).
+
+---
+
+## Step 4: I built the data layer, and found the reference code no longer runs
+
+`src/data.py` downloads through `yfinance`, caches to `data/raw/`, and validates.
+
+Two current library behaviours are pinned down explicitly rather than left to defaults, because
+relying on those defaults is what breaks older code:
+
+- **`auto_adjust` now defaults to `True`**, so there is no `Adj Close` column. Every line in the
+  older approach that references it fails. I keep auto adjustment on, because `Close` is then
+  already corrected for splits and dividends, which is what return calculations need.
+- **`multi_level_index` now defaults to `True`**, so even a single ticker returns MultiIndex
+  columns. I flatten explicitly.
+
+I also replaced the `globals()[ticker] = frame` loop that older code uses with a plain
+`dict[str, DataFrame]`. Assigning into `globals()` is invisible to linters, type checkers and
+readers, and it breaks the moment the download shape changes.
+
+Separately, `yf.pdr_override()` has been removed from `yfinance` entirely, so the
+`pandas_datareader` bridge that older implementations depend on cannot work at all any more.
+`yf.download()` is called directly instead.
+
+**Validation returns findings rather than raising.** Gaps in a market calendar are normal, since
+markets close at weekends and holidays, so an exception would be the wrong response. The function
+reports row counts, missing values, duplicate dates, monotonicity and the largest gap, and lets the
+caller judge. I deliberately do **not** reindex to a continuous calendar: filling weekends with
+interpolated prices would invent trading that never happened and would damp the volatility I later
+measure.
+
+One thing I did not anticipate: if you run the pipeline while the US market is open, the final row
+is a **partial session**, with a close that is just the last trade so far and a volume a fraction
+of a full day. Training on it would teach the model from an incomplete bar. The notebook detects
+this by comparing the last bar's volume against the median and drops it, printing what it did
+rather than doing it silently.
+
+---
+
+## Step 5: I did the exploratory analysis, and one result reframed the risk discussion
+
+Standard market EDA: price and volume history, 10/20/50 day moving averages, daily return series
+and distribution, peer correlation, risk versus return.
+
+Two things I did differently.
+
+**I plotted the return distribution twice**, once on a linear axis and once on a log axis. On
+linear axes a fitted normal looks fine. On log axes the observed data extends far past where the
+fitted curve has gone to zero. Then I counted the extreme days: 5 sigma moves occurred 10 times
+where a normal distribution predicts 0.002. Putting a number on it turns "returns have fat tails",
+which everyone says, into something specific enough to act on.
+
+**I plotted correlation of returns and correlation of price levels side by side.** The price level
+version reports high correlations between series that need not move together at all, because both
+trend and correlation picks up the shared trend. That is spurious correlation between
+non-stationary series, and showing the size of the distortion is more convincing than asserting it.
+It also sets up the stationarity work directly.
+
+I also flagged a data quality issue rather than working around it quietly: all five tickers report
+history back to 2015, but Warner Bros. Discovery did not exist until 2022, and Yahoo backfills the
+ticker with its predecessor. I quantified how much the correlation changes if you use only the
+period since the company existed, and left both numbers visible.
+
+---
+
+## Step 6: I established stationarity, which is where the project's argument comes from
+
+This is the analytical core, and everything downstream depends on it.
+
+**I ran two tests with opposite null hypotheses.** ADF assumes a unit root and asks you to reject
+it; KPSS assumes stationarity and asks you to reject that. Running only one leaves you with a
+result that could be a power problem. Running both means agreement is strong evidence and
+disagreement is informative. They agreed on all three series: prices and log prices non-stationary,
+log returns stationary.
+
+That result is the argument the whole project rests on. A unit root means the series is a random
+walk with drift:
+
+$$P_t = P_{t-1} + \mu + \varepsilon_t$$
+
+If that is the process, the best possible forecast of tomorrow given everything knowable today is
+$P_t + \mu$, which is the naive baseline. Not *a* sensible baseline, the theoretically optimal one.
+So any model claiming to beat it is claiming the random walk does not hold, and that needs real out
+of sample evidence rather than a chart.
+
+**Then I tested autocorrelation twice**, on returns and on absolute returns. Returns showed
+essentially none (Ljung-Box p = 0.849 at lag 1). Absolute returns showed strong, persistent
+structure (p = 0.000 at every lag, significant past sixty). Direction is unpredictable, magnitude
+is not. That contrast is the single most useful thing the analysis produced, and I would not have
+found it by testing returns alone.
+
+**I ran seasonal decomposition and reported that it found nothing.** The seasonal component came to
+2.89% of the observed standard deviation. Time series guides demonstrate decomposition on data with
+genuine calendar seasonality; a liquid large cap equity has none, because a repeatable monthly price
+cycle would be arbitraged away. Reporting a null result is a finding, not a skipped step.
+
+**Then I built the feature matrix**, with one rule: every feature uses only information available
+strictly before the day being predicted. Rolling windows and lags look backwards, the target is
+shifted forwards. I asserted the alignment in the notebook rather than trusting it, including a
+check that a rolling statistic at time *t* is unchanged when all rows after *t* are deleted.
+
+---
+
+## Step 7: I built the baselines before touching a neural network
+
+This ordering is deliberate. Building baselines *after* your main model invites you to accept
+whatever they show, because by then you have an answer you like.
+
+Four baselines, each a few lines: naive persistence, drift, SMA, EMA. Plus ARIMA, with the order
+chosen by AIC over a grid rather than assumed.
+
+Three design decisions worth naming:
+
+**I tuned the SMA and EMA windows on validation, never on test.** Choosing a parameter by test
+performance is fitting to the data you are about to be scored on. The tuning result then became a
+finding in its own right: validation error rose monotonically with window length, so the shortest
+window won, and its limit is the naive forecast again.
+
+**ARIMA forecasts are rolling and one step ahead.** After each prediction the true observation is
+appended to the model's history before the next prediction is made, so the model always knows
+everything up to yesterday and nothing about tomorrow. Forecasting the whole test period in a
+single call would let errors compound and would not be comparable to the baselines.
+
+**Directional accuracy returns NaN when a model takes no position.** The naive forecast predicts no
+change, so it never makes a directional claim, and scoring it would be inventing a number. I also
+added a relative tolerance, because a model can predict a change of 1e-12 and technically have a
+sign; without the tolerance you end up reporting the direction of floating point noise. ARIMA(0,1,0)
+did exactly that in my first run and produced a meaningless 25%.
+
+AIC selected **ARIMA(0,1,0)**, which is the random walk, which is the naive forecast. Classical
+model selection, given a real menu of alternatives, concluded there was nothing to model.
+
+---
+
+## Step 8: I built the LSTM, and isolated the leakage bug in a tested module
+
+The architecture is deliberately identical to the conventional implementation:
+`LSTM(128) -> LSTM(64) -> Dense(25) -> Dense(1)`, Adam, mean squared error, 60 day window. Keeping
+it fixed means nobody can attribute the outcome to a badly built network. What I changed is the
+protocol, not the model:
+
+| Conventional | Here | Why |
+|---|---|---|
+| Scaler fitted on the full series | Fitted on training data only | The scaler otherwise knows the test period's minimum and maximum before training |
+| No validation set | Chronological 70/15/15 | Nothing to early stop on, and no way to tune without touching test |
+| `epochs=1` | Up to 100 with early stopping | One epoch is an arbitrary stopping point |
+| `batch_size=1` | 32 | Faster, and less gradient noise |
+| Single split | Splits fixed, plus a seed sweep | One run is one draw from a distribution |
+
+**The leakage fix lives in `src/windowing.py` and is enforced by `tests/test_windowing.py`.** Six
+tests, but two carry the weight:
+
+- The scaler's learned minimum and maximum must equal the *training* minimum and maximum, and must
+  not equal the full series maximum.
+- Truncating the series to the training set must leave every training window byte identical. If
+  future values can change a training example, the future is influencing the past.
+
+There is a third test that looks strange and is the most diagnostic of the set: it asserts that
+scaled test values are **allowed to exceed 1.0**. A correct train only scaler produces out of range
+test values whenever the test period moves outside the training range. The leaky version compresses
+everything neatly into [0, 1], which looks tidier and is precisely the bug. Tidy output is the
+symptom.
+
+Writing the fixture also mattered: the synthetic series jumps by 500 in its test region, so if the
+scaler were fitted on everything the difference would be large and unmistakable rather than subtle.
+
+---
+
+## Step 9: I ran the experiments in an order that could prove me wrong
+
+Four runs, deliberately sequenced.
+
+**First, the honest version.** Train only scaling, price levels. It failed badly: RMSE about 30
+against a baseline of 2.13, under-predicting by an average of $28 a day. The diagnosis was visible
+in one number I had printed earlier, the scaled test target reaching 2.0. NFLX topped out near $69
+in training and reached $134 in test, so the network was being asked to extrapolate outside
+everything it had seen, in a space bounded to [0, 1]. That is a real limitation of the standard
+framing, not a coding error.
+
+**Second, the leaky version**, run deliberately, with the same architecture, seed and splits and
+one line changed. RMSE fell from 30 to 13. The leak roughly halves the reported error. It does not
+manufacture a good result here, but it hides the extrapolation failure behind a number that looks
+mediocre rather than catastrophic, and on a series with a smaller regime shift that would be enough
+to turn a failure into an apparent success.
+
+**Third, the reframed version.** The extrapolation problem has a principled fix that the
+stationarity work had already pointed at: predict log returns, which are stationary and centred
+near zero, then convert back with $\hat{P}_{t+1} = P_t e^{\hat{r}_{t+1}}$. Same architecture,
+different target. RMSE came level with the baseline and directional accuracy hit 55.15%, p = 0.018.
+
+That is where I could have stopped, and it is where the conventional implementation does stop.
+
+**Fourth, the seed sweep.** A network's initial weights are random, so training once gives one draw
+from a distribution, and reporting it as the result is the same error as reporting one coin toss as
+evidence of bias. Five seeds gave a mean of 51.51%, p = 0.28, beating the baseline in one run out of
+five. The 55% was the lucky draw.
+
+I designed the sequence so that step four could overturn step three. It did.
+
+---
+
+## Step 10: I made it reproducible
+
+`scripts/run_experiment.py` regenerates every number in the README from a clean checkout. It takes
+`--seeds` so a reader can set it to 1 and watch the apparent directional edge reappear, which is
+the project's whole point made executable, and `--skip-lstm` for a three second run of the
+baselines and ARIMA alone.
+
+The notebooks import from `src/`, the script imports from `src/`, and the tests import from `src/`.
+There is one implementation of everything.
+
+Figures are committed as PNGs so the README renders on GitHub without anyone running a cell.
+Cached price data is gitignored, because `src/data.py` regenerates it and committing data you can
+download is noise.
+
+---
+
+## What I would do differently
+
+**I would have run the seed sweep earlier.** I built it as a robustness check at the end and it
+turned out to be the finding. Anything with random initialisation should be run several times
+before you believe a single number, and I now think of that as part of the first evaluation rather
+than a final audit.
+
+**I would separate the leakage demonstration from the leakage fix sooner.** I wrote the correct
+version first and reconstructed the buggy one afterwards to measure it. Building both from the
+start would have made the comparison cleaner and cost nothing.
+
+**The volatility result deserves its own project.** Absolute returns being strongly autocorrelated
+out past sixty lags is the most actionable thing in the analysis, and a GARCH model on this exact
+data is a tractable problem with a real answer. I kept it out of scope to finish this one, which I
+think was right, but it is the obvious next build.
+
+---
+
+## What this project is meant to demonstrate
+
+Not that I can call `model.fit()`. That part is four lines and everyone has it.
+
+That I read a reference implementation closely enough to find a data leak in it, and then wrote the
+test that stops the leak coming back. That I know why a low RMSE on a trending series is a weak
+claim, and what to measure instead. That I test for stationarity before choosing a model family,
+and know what follows from the answer. That I build baselines before the thing I am hoping will
+win. And that when a result looked significant, I tried to break it before believing it, and
+published the version that survived.

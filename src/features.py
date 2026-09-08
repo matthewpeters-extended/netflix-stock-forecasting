@@ -2,7 +2,7 @@
 
 Kept deliberately small and pure: every function takes a Series or DataFrame and
 returns a new one. Nothing mutates its input, so notebook cells can be re-run in
-any order without silently corrupting state — a real hazard in pandas 3, where
+any order without silently corrupting state, a real hazard in pandas 3, where
 chained assignment on a slice no longer does what older tutorials assume.
 """
 
@@ -105,7 +105,7 @@ def add_lags(
     """Add `{column}_lag_{k}` columns.
 
     Lag features are how a classical model is told about the past. Note that
-    lag 1 of the closing price *is* the naive baseline — which is a useful thing
+    lag 1 of the closing price *is* the naive baseline, which is a useful thing
     to keep in view when a model built on lag features appears to do well.
     """
     out = df.copy()
@@ -118,7 +118,7 @@ def add_calendar_features(df: pd.DataFrame) -> pd.DataFrame:
     """Add cyclically encoded day-of-week and month.
 
     Encoding a weekday as 0-4 implies Monday and Friday are four units apart and
-    Thursday and Friday one — but the cycle wraps. Sine/cosine pairs preserve
+    Thursday and Friday one, but the cycle wraps. Sine/cosine pairs preserve
     that wrap-around, so the model sees the calendar as circular rather than as
     an arbitrary integer scale.
     """
@@ -153,7 +153,7 @@ def build_feature_matrix(
 
     out = add_moving_averages(out, windows=ma_windows)
     for window in ma_windows:
-        # Distance from the moving average, as a fraction — scale free, so it
+        # Distance from the moving average, as a fraction. Scale free, so it
         # stays comparable across the 70x split adjustment in this series.
         out[f"close_over_MA_{window}"] = out["Close"] / out[f"MA_{window}"] - 1
 

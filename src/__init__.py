@@ -1,1 +1,1 @@
-"""NFLX stock forecasting — importable project code."""
+"""NFLX stock forecasting: importable project code."""

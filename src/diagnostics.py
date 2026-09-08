@@ -2,11 +2,11 @@
 
 Three tests, each answering a different question:
 
-- **ADF** — does the series have a unit root? Null hypothesis: it does
+- **ADF**: does the series have a unit root? Null hypothesis: it does
   (non-stationary). A small p-value means we reject that and call it stationary.
-- **KPSS** — is the series stationary around a level? Null hypothesis: it *is*
+- **KPSS**: is the series stationary around a level? Null hypothesis: it *is*
   (the opposite of ADF). A small p-value means we reject stationarity.
-- **Ljung-Box** — is there autocorrelation in the first k lags? Null hypothesis:
+- **Ljung-Box**: is there autocorrelation in the first k lags? Null hypothesis:
   none. A small p-value means there is.
 
 Running ADF and KPSS together matters. They have opposite nulls, so agreement is

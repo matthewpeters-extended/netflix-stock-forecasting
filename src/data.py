@@ -8,8 +8,8 @@ Two current yfinance behaviours this module pins down explicitly, because
 relying on their defaults is exactly what breaks old notebooks:
 
 1. `auto_adjust` now defaults to True, so there is no `Adj Close` column. We
-   keep auto-adjustment on — `Close` is therefore already adjusted for splits
-   and dividends, which is what we want for return calculations — and we say so
+   keep auto-adjustment on, so `Close` is already adjusted for splits
+   and dividends, which is what we want for return calculations, and we say so
    rather than leaving it implicit.
 2. `multi_level_index` now defaults to True, so even a single ticker comes back
    with MultiIndex columns. We flatten to plain columns.
