@@ -95,3 +95,72 @@ def tail_counts(returns: pd.Series, sigmas: tuple[float, ...] = (3.0, 4.0, 5.0))
             }
         )
     return pd.DataFrame(rows)
+
+
+def add_lags(
+    df: pd.DataFrame,
+    column: str = "Close",
+    lags: tuple[int, ...] = (1, 2, 3, 5, 10, 21),
+) -> pd.DataFrame:
+    """Add `{column}_lag_{k}` columns.
+
+    Lag features are how a classical model is told about the past. Note that
+    lag 1 of the closing price *is* the naive baseline — which is a useful thing
+    to keep in view when a model built on lag features appears to do well.
+    """
+    out = df.copy()
+    for lag in lags:
+        out[f"{column}_lag_{lag}"] = out[column].shift(lag)
+    return out
+
+
+def add_calendar_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Add cyclically encoded day-of-week and month.
+
+    Encoding a weekday as 0-4 implies Monday and Friday are four units apart and
+    Thursday and Friday one — but the cycle wraps. Sine/cosine pairs preserve
+    that wrap-around, so the model sees the calendar as circular rather than as
+    an arbitrary integer scale.
+    """
+    out = df.copy()
+    dow = out.index.dayofweek
+    month = out.index.month
+
+    out["dow_sin"] = np.sin(2 * np.pi * dow / 5)
+    out["dow_cos"] = np.cos(2 * np.pi * dow / 5)
+    out["month_sin"] = np.sin(2 * np.pi * month / 12)
+    out["month_cos"] = np.cos(2 * np.pi * month / 12)
+    return out
+
+
+def build_feature_matrix(
+    df: pd.DataFrame,
+    lags: tuple[int, ...] = (1, 2, 3, 5, 10, 21),
+    ma_windows: tuple[int, ...] = (10, 20, 50),
+) -> pd.DataFrame:
+    """Assemble the modeling feature matrix.
+
+    Every feature is built from information available strictly *before* the day
+    being predicted. Rolling windows and lags look backwards only, so nothing
+    here leaks the future into the past.
+    """
+    out = df.copy()
+    out["return"] = daily_returns(out["Close"])
+    out["log_return"] = log_returns(out["Close"])
+    out["volatility_21d"] = rolling_volatility(out["return"], window=21)
+    out["volume_ratio"] = out["Volume"] / out["Volume"].rolling(21).mean()
+    out["high_low_range"] = (out["High"] - out["Low"]) / out["Close"]
+
+    out = add_moving_averages(out, windows=ma_windows)
+    for window in ma_windows:
+        # Distance from the moving average, as a fraction — scale free, so it
+        # stays comparable across the 70x split adjustment in this series.
+        out[f"close_over_MA_{window}"] = out["Close"] / out[f"MA_{window}"] - 1
+
+    out = add_lags(out, column="return", lags=lags)
+    out = add_calendar_features(out)
+
+    # The prediction target: tomorrow's close, and tomorrow's return.
+    out["target_close"] = out["Close"].shift(-1)
+    out["target_return"] = out["return"].shift(-1)
+    return out
