@@ -129,6 +129,13 @@ The conventional approach to this problem fits a MinMaxScaler on the entire pric
 afterwards splits into train and test. The scaler has then already seen the highest and lowest
 prices of the test period before training starts.
 
+![Where the data leak happens](reports/figures/00_data_leakage.png)
+
+Top panel is the conventional approach: `fit()` spans the whole series, so the scaler learns a
+maximum of $133.91, a price that only ever occurs in the test period. Bottom panel is this project:
+`fit()` stops at the training boundary and learns $69.17. Every training example in the top panel
+is normalised using a number from the future.
+
 I fitted the scaler on training data only, and enforced it with a unit test. Then I ran the leaky
 version deliberately, changing nothing else, to measure what the bug is worth:
 
