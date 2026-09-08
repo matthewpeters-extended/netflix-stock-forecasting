@@ -2,8 +2,14 @@
 
 **Owner:** Matthew Peters
 **Created:** 2026-09-08
-**Status:** Planning complete, not yet started
-**Estimated effort:** 12–16 hours across 6 working sessions
+**Status:** Complete. All six sessions delivered; see [`README.md`](README.md) for results and
+[`WALKTHROUGH.md`](WALKTHROUGH.md) for the build account.
+**Estimated effort:** 12 to 16 hours across 6 working sessions
+
+> **Outcome.** No model beat the naive forecast. AIC independently selected ARIMA(0,1,0), which is
+> the naive forecast. An apparent 55.15% directional edge (p = 0.018) proved to be seed variance:
+> the five seed mean was 51.51% (p = 0.28). Fixing the scaler leak changed reported RMSE from 13.44
+> to 29.97, revealing an extrapolation failure the leak had concealed.
 
 ---
 
@@ -292,34 +298,50 @@ fresh venv before you push**. A broken quickstart is the fastest way to lose a r
 
 ---
 
-## 7. Résumé bullets (draft; finalize with real numbers in Session 6)
+## 7. Résumé bullets (final, with measured numbers)
 
 > **Netflix Stock Forecasting: Time Series & Deep Learning** · Python, TensorFlow/Keras,
-> statsmodels, pandas · [github.com/…]
-> - Built an end-to-end forecasting pipeline for NFLX equity data (Yahoo Finance, 10 yrs daily),
->   comparing LSTM sequence models against naive, moving-average, and ARIMA baselines under
->   walk-forward validation.
-> - Identified and corrected data leakage in the standard tutorial approach (scaler fit on the
->   full series pre-split) and added a regression test enforcing train-only fitting.
-> - Demonstrated that reported RMSE gains were an artifact of price-space evaluation: measured
->   directional accuracy of __% vs. a 50% baseline, and documented the negative result.
-> - Packaged as an installable module with pytest coverage and a single-command reproduction
->   script.
+> statsmodels, scikit-learn, pandas ·
+> github.com/matthewpeters-extended/netflix-stock-forecasting
+>
+> - Built an end to end forecasting pipeline over 2,936 sessions of NFLX daily data, benchmarking
+>   LSTM sequence models against naive, moving average and ARIMA baselines on identical
+>   chronological splits, packaged as a tested module with a single command reproduction script.
+> - Identified and fixed data leakage in the standard approach, where a MinMaxScaler is fitted
+>   before the train/test split; quantified its effect at a 2.2x reduction in reported RMSE (29.97
+>   to 13.44) and added regression tests enforcing train only fitting.
+> - Demonstrated that an apparent 55.15% directional accuracy (one sided binomial p = 0.018) was
+>   seed variance rather than signal: across five random seeds the mean fell to 51.51% (p = 0.28),
+>   beating the naive baseline in one run of five. Published the negative result.
+> - Established non stationarity through agreeing ADF and KPSS tests, then showed returns are
+>   serially uncorrelated (Ljung-Box p = 0.85 at lag 1) while absolute returns are strongly
+>   autocorrelated past 60 lags, identifying volatility rather than direction as the tractable
+>   forecasting target.
 
----
+**Shorter two line version, if space is tight:**
 
-## 8. Open questions to settle in Session 1
+> **Netflix Stock Forecasting** · Python, TensorFlow/Keras, statsmodels · Benchmarked LSTM models
+> against naive and ARIMA baselines on 11 years of NFLX daily data. Found and fixed a data leak in
+> the standard approach (2.2x RMSE effect, regression tested), and showed an apparent 55% directional
+> edge was seed variance, not signal (five seed mean 51.5%, p = 0.28).
 
-1. **Date range**: 2015→present (~10 yrs, includes the 2022 crash and the streaming-wars regime
-   shift) or 2019→present (matches ProjectPro's window, more homogeneous)? *Recommendation:
-   2015→present, and note the regime break explicitly.*
-2. **Prediction target**: next-day close (matches the sources) or next-day return?
-   *Recommendation: next-day close as the headline for comparability, next-day return as the
-   ablation. Do both.*
-3. **Prophet**: include or cut? *Recommendation: optional; only if Sessions 1 to 5 finish on time.*
-4. **GitHub repo name/visibility**: must be **public** to be linkable from a résumé.
+## 8. Open questions, as resolved
 
----
+1. **Date range.** Settled on 2015 to present, 2,936 sessions. The 2022 crash and the streaming
+   wars regime shift are both inside the sample and are called out explicitly rather than avoided.
+2. **Prediction target.** Both, as planned. Next day close was the headline; predicting log returns
+   instead became the fix for the extrapolation failure and is reported alongside.
+3. **Prophet.** Cut. ARIMA and the LSTM answered the question, and AIC selecting (0,1,0) made a
+   third forecasting family redundant.
+4. **Repo name and visibility.** Public, at
+   github.com/matthewpeters-extended/netflix-stock-forecasting.
+
+### Added during the build, not in the original plan
+
+- `src/diagnostics.py` for ADF, KPSS and Ljung-Box, since stationarity testing grew past what
+  belonged in a notebook.
+- The **seed sweep**, which was not planned and turned out to be the finding.
+- The **deliberate leaky rerun**, to measure the bug rather than only fix it.
 
 ## 9. Scope guardrails
 
