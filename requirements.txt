@@ -1,0 +1,29 @@
+# Core data stack
+pandas>=2.0
+numpy>=1.24
+matplotlib>=3.7
+seaborn>=0.13
+
+# Market data (replaces the deprecated pandas_datareader + yf.pdr_override() pattern)
+yfinance>=0.2.50
+
+# Classical ML + time series
+scikit-learn>=1.3
+statsmodels>=0.14
+
+# Deep learning.
+# NOTE: on Python 3.9 / arm64 you may need to pin: tensorflow>=2.16,<2.18
+# Verify with:  python -c "import tensorflow as tf; print(tf.__version__)"
+# If it will not install, see PLAN.md section 2 (install Python 3.12, or swap to torch).
+tensorflow>=2.16
+
+# Notebooks
+jupyterlab>=4.0
+ipykernel>=6.25
+
+# Tests
+pytest>=7.4
+
+# --- Optional, add only if Session 4 has time ---
+# pmdarima>=2.0      # auto_arima; frequently lags behind new numpy releases
+# prophet>=1.1
